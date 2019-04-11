@@ -1,7 +1,7 @@
 #include "minimal_turtlebot/turtlebot_controller.h"
 #include <cmath>
 
-static int State = 0;
+static int State = 1;
 static uint64_t nano = 0;
 static float rot_vel = 0.0;
 static float theta = 0.0;
@@ -27,23 +27,31 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 	//soundValue.CLEANINGEND 			6
 
 	theta = atan(abs(turtlebot_inputs.linearAccelY/turtlebot_inputs.linearAccelX));			
+	ROS_INFO("State = %d", State);
+	
 
 	float min_dist = 5.0;
 	float angle = 0.0;
 	for(int i = 0; i < turtlebot_inputs.numPoints; i++){
 		float dist = turtlebot_inputs.ranges[i];
-		float index_angle = i*turtlebot_inputs.angleIncrement + min_angle;
+		float index_angle = i*turtlebot_inputs.angleIncrement + turtlebot_inputs.minAngle;;
 		if(dist < min_dist){
 			min_dist = dist;
 			angle = index_angle;
 		}
 	}
 
+	ROS_INFO("min_dist = %f at angle %f", min_dist, angle);
+	
+
 	switch(State){
 		case 1: //move forward until one of the sensors is tripped
-			if(min_dist >= 4.0){ //no object in visible distance, move straight
-				*vel = 0.5;
-				*ang_vel = 0.0;
+			if((min_dist < 4.0) && (min_dist > 0.5)){ //no object in visible distance, move straight
+				*vel = (float)(3.0/70.0)*(min_dist) + (11.0/140.0);
+				if(angle < 0)
+					*ang_vel = 0.1;
+				else
+					*ang_vel = -0.1;
 			}
 			else if(min_dist <= 0.5){ //object too close to robot, enter handling procedure
 				*vel = 0.0;
@@ -54,11 +62,8 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 				break;
 			}
 			else{ //object visible but not close enough to stop robot, try to avoid by turning away
-				*vel = (1/7)*(min_dist) - (1/14);
-				if(angle < 0)
-					*ang_vel = 0.2;
-				else
-					*ang_vel = -0.2;
+				*vel = 0.25;
+				*ang_vel = 0.0;
 			}
 			
 			if(turtlebot_inputs.battVoltage < 10){
@@ -66,6 +71,7 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 				*vel = 0.0;
 				*ang_vel = 0.0;
 			}
+
 			else if (turtlebot_inputs.leftBumperPressed == 1 || turtlebot_inputs.centerBumperPressed == 1 || turtlebot_inputs.sensor0State == 1 || turtlebot_inputs.sensor1State == 1){
 				//bumper pressed, obstacle to left of or in front of robot
 				//proceed to state 2, set future rotational velocity to turn right pi/8 rad/sec
@@ -140,6 +146,7 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 				else{ //object detected on left of or in front of robot, turn right
 					rot_vel = -0.3927;
 				}
+				nano = turtlebot_inputs.nanoSecs;
 				State = 7;
 			}
 			break;
@@ -148,7 +155,8 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 			*vel = 0.0;
 			*ang_vel = rot_vel;
 			
-			if(min_dist > 0.5) //when path is clear again, continue to State 1 and drive straight
+			if(turtlebot_inputs.nanoSecs-nano >= 2000000000)
+			//if(min_dist > 0.5) //when path is clear again, continue to State 1 and drive straight
 				State = 1;
 
 			break;
