@@ -1,14 +1,18 @@
 #include "minimal_turtlebot/turtlebot_controller.h"
 #include <cmath>
 #include <algorithm>
+#include <iostream>
+#include <ros/ros.h>
+
+using namespace std;
 
 static int State = 1;
 static uint64_t nano = 0;
 static float rot_vel = 0.0;
 static float theta = 0.0;
 
-float goal_x = 0.0;
-float goal_y = -5.0;
+float goal_x;
+float goal_y;
 float current_yaw = 0.0;
 float des_yaw = 0.0;
 float heading_err = 0.0;
@@ -28,39 +32,31 @@ static float start_y = 0.0;
 
 void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue, float *vel, float *ang_vel)
  {
-	//Place your code here! you can access the left / right wheel 
-	//dropped variables declared above, as well as information about
-	//bumper status. 
-	
-	//outputs have been set to some default values. Feel free 
-	//to change these constants to see how they impact the robot. 
-  
-	//*soundValue = 0;
-  
-	//here are the various sound value enumeration options
-	//soundValue.ON (mail turn-in)			0
-	//soundValue.OFF (mail drop-off)		1
-	//soundValue.RECHARGE (announce presence)	2
-	//soundValue.BUTTON (receive request)		3
-	//soundValue.ERROR				4
-	//soundValue.CLEANINGSTART			5
-	//soundValue.CLEANINGEND 			6
-
+ 	//calculate the current heading value of the robot
 	theta = atan(abs(turtlebot_inputs.linearAccelY/turtlebot_inputs.linearAccelX));
 
+	//calculate how far away from the goal the robot is
 	dist_to_goal = sqrt(pow((goal_x - turtlebot_inputs.x),2) + pow((goal_y - turtlebot_inputs.y),2));
 	if(isnan(dist_to_goal))
 		dist_to_goal = 5.0;
 
+	//at start of program or when location is lost, reset all parameters
 	if(start && !(isnan(turtlebot_inputs.x)) && !(isnan(turtlebot_inputs.y))){
 		//ROS_INFO("startX = %f startY = %f");
 		start_x = turtlebot_inputs.x;
 		start_y = turtlebot_inputs.y;
 		start = false;
+		//GET_GOAL(goal_x,goal_y);
+		cout<<"requesting new goal pose"<<endl;
+		cout<<"goal_x = "<<endl;
+		cin>>goal_x;
+		cout<<"goal_y = "<<endl;
+		cin>>goal_y;
+		ROS_INFO("Goal Pose Updated to X = %2.2f, Y = %2.2f", goal_x, goal_y);
 	}			
 	
 	
-
+	//parse through lidar data, find the closest object to the robot
 	float min_dist = 5.0;
 	float angle = 0.0;
 	for(int i = 0; i < turtlebot_inputs.numPoints; i++){
@@ -74,24 +70,36 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 
 	
 	//calculate heading error
-	current_yaw = 2.0 * atan2(turtlebot_inputs.z_angle, turtlebot_inputs.orientation_omega);
-	//ROS_INFO("current_yaw = %f", current_yaw);
+	current_yaw = 2.0 * atan2(turtlebot_inputs.qz, turtlebot_inputs.qw);
 	des_yaw = atan2((goal_y - turtlebot_inputs.y),(goal_x - turtlebot_inputs.x));
-	//ROS_INFO("des_yaw = %f", des_yaw);
 	heading_err = des_yaw - current_yaw;
-	//ROS_INFO("heading_err = %f", heading_err);
 
-	//ROS_INFO("x = %f \t y = %f", turtlebot_inputs.x, turtlebot_inputs.y);
-	//ROS_INFO("yaw = %f \t omega = %f", turtlebot_inputs.z_angle, turtlebot_inputs.orientation_omega);
+	//If previous goal was completed (state = 50) or goal is nan, get new goal
+	if((State == 50) || isnan(goal_x) || isnan(goal_y)){
+		cout<<"requesting new goal pose"<<endl;
+		cout<<"goal_x = "<<endl;
+		cin>>goal_x;
+		cout<<"goal_y = "<<endl;
+		cin>>goal_y;
 
-	if((goal_x == start_x) && (goal_y == start_y) && State == 9){
+		//GET_GOAL(goal_x, goal_y);
+		ROS_INFO("Goal Pose Updated to X = %2.2f, Y = %2.2f", goal_x, goal_y);
+	}
+
+	//if the robot has returned to its origin after reaching its goal, stop the robot
+	if((goal_x == start_x) && (goal_y == start_y) && (State == 9)){
 		State = 50;
 		*vel = 0.0;
 		*ang_vel = 0.0;
 		*soundValue = 1;
 		ROS_INFO("returned to origin");
 	}
+	//when the goal is updated to a new position, begin traveling
+	else if((goal_x != start_x) && (goal_y != start_y) && (State == 50)){
+		State = 1;
+	}
 
+	//begin control of robot to get to goal
 	switch(State){
 		case 1: //move forward until one of the sensors is tripped
 				if((min_dist < 1.0) && (min_dist > 0.6) && (min_dist < dist_to_goal)){ //object seen but not too close, avoid by turning away
@@ -215,7 +223,7 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 			if(min_dist > 0.8){ //if object is removed, go back to state 1 and drive straight
 				State = 1;
 			}
-			else if(turtlebot_inputs.nanoSecs-nano >= 15000000000){ //object not removed, turn in place until way is clear
+			else if(turtlebot_inputs.nanoSecs-nano >= 15*SEC){ //object not removed, turn in place until way is clear
 				if(angle < 0){ //object detected in right of robot, turn left
 					rot_vel = PI_8;
 				}

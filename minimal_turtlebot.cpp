@@ -11,18 +11,32 @@ float localAngularSpeed=0.0;
 uint8_t soundValueUpdateCounter = 0; 
   
 turtlebotInputs localTurtleBotInputs; 
+goalPose_t goalPose;
 bool amcl_present = 0; 
 
 uint32_t startUpTimer = 0; 
+
+void poseCallback(const geometry_msgs::PoseStamped& pose) 
+{ 
+	goalPose.pose_x = pose.pose.position.x; 
+	goalPose.pose_y = pose.pose.position.y; 
+	goalPose.pose_z = pose.pose.position.z; 
+	goalPose.quat_w = pose.pose.orientation.w; 
+	goalPose.quat_x = pose.pose.orientation.x; 
+	goalPose.quat_y = pose.pose.orientation.y; 
+	goalPose.quat_z = pose.pose.orientation.z; 
+}  
 
 void amclCallback(const geometry_msgs::PoseWithCovarianceStamped& pose) 
 { 
 	amcl_present = 1; 
 	localTurtleBotInputs.x = pose.pose.pose.position.x; 
 	localTurtleBotInputs.y = pose.pose.pose.position.y; 
-	localTurtleBotInputs.z_angle = pose.pose.pose.orientation.z; 
-	localTurtleBotInputs.orientation_omega = pose.pose.pose.orientation.w; 
-	
+	localTurtleBotInputs.z = pose.pose.pose.position.z; 
+	localTurtleBotInputs.qw = pose.pose.pose.orientation.w; 
+	localTurtleBotInputs.qx = pose.pose.pose.orientation.x; 
+	localTurtleBotInputs.qy = pose.pose.pose.orientation.y; 
+	localTurtleBotInputs.qz = pose.pose.pose.orientation.z; 
 }  
 
 void odomCallback(const nav_msgs::Odometry& pose) 
@@ -31,8 +45,11 @@ void odomCallback(const nav_msgs::Odometry& pose)
 	{
 		localTurtleBotInputs.x = pose.pose.pose.position.x; 
 		localTurtleBotInputs.y = pose.pose.pose.position.y; 
-		localTurtleBotInputs.z_angle = pose.pose.pose.orientation.z; 
-		localTurtleBotInputs.orientation_omega = pose.pose.pose.orientation.w; 
+		localTurtleBotInputs.z = pose.pose.pose.position.z; 
+		localTurtleBotInputs.qw = pose.pose.pose.orientation.w; 
+		localTurtleBotInputs.qx = pose.pose.pose.orientation.x; 
+		localTurtleBotInputs.qy = pose.pose.pose.orientation.y; 
+		localTurtleBotInputs.qz = pose.pose.pose.orientation.z; 
 	}
 		
 }  
@@ -191,6 +208,7 @@ int main(int argc, char **argv)
   ros::Subscriber my_core_subscription= n.subscribe("mobile_base/sensors/core",10,coreCallback); 
   ros::Subscriber my_odom_subscription= n.subscribe("odom",10,odomCallback); 
   ros::Subscriber my_amcl_subscription= n.subscribe("amcl_pose",10,amclCallback); 
+  ros::Subscriber my_pose2d_subscription= n.subscribe("goal_pose2d",10,poseCallback); 
   
   // We don't need color image or depth images for this semester, let's just look at laser scan topics
   // ros::Subscriber colorImageSubscription= n.subscribe("camera/rgb/image_rect_color",1,colorImageCallback); 
@@ -204,10 +222,21 @@ int main(int argc, char **argv)
   ros::Publisher cmd_vel_pub_ = n.advertise<geometry_msgs::Twist>("mobile_base/commands/velocity", 1);
   
   // initialize to nan to start
-  localTurtleBotInputs.x=std::numeric_limits<float>::quiet_NaN();; 
-  localTurtleBotInputs.y=std::numeric_limits<float>::quiet_NaN();; 
-  localTurtleBotInputs.z_angle=std::numeric_limits<float>::quiet_NaN();; 
-  localTurtleBotInputs.orientation_omega=std::numeric_limits<float>::quiet_NaN();; 
+  localTurtleBotInputs.x=std::numeric_limits<float>::quiet_NaN(); 
+  localTurtleBotInputs.y=std::numeric_limits<float>::quiet_NaN(); 
+  localTurtleBotInputs.z=std::numeric_limits<float>::quiet_NaN(); 
+  localTurtleBotInputs.qw=std::numeric_limits<float>::quiet_NaN(); 
+  localTurtleBotInputs.qx=std::numeric_limits<float>::quiet_NaN(); 
+  localTurtleBotInputs.qy=std::numeric_limits<float>::quiet_NaN(); 
+  localTurtleBotInputs.qz=std::numeric_limits<float>::quiet_NaN(); 
+
+  goalPose.pose_x = std::numeric_limits<float>::quiet_NaN();
+  goalPose.pose_y = std::numeric_limits<float>::quiet_NaN();
+  goalPose.pose_z = std::numeric_limits<float>::quiet_NaN();
+  goalPose.quat_w = std::numeric_limits<float>::quiet_NaN();
+  goalPose.quat_x = std::numeric_limits<float>::quiet_NaN();
+  goalPose.quat_y = std::numeric_limits<float>::quiet_NaN();
+  goalPose.quat_z = std::numeric_limits<float>::quiet_NaN();
 
   
   while(ros::ok())
