@@ -7,8 +7,8 @@ static uint64_t nano = 0;
 static float rot_vel = 0.0;
 static float theta = 0.0;
 
-float goal_x = 3.0;
-float goal_y = 2.0;
+float goal_x = 0.0;
+float goal_y = -5.0;
 float current_yaw = 0.0;
 float des_yaw = 0.0;
 float heading_err = 0.0;
@@ -17,7 +17,7 @@ float k_phi = 10.0;
 
 float dist_to_goal = 0.0;
 
-float max_ang_vel = 0.5;
+float max_ang_vel = 0.3;
 
 const uint64_t SEC = 1000000000l;
 const float PI_8 = 0.3927;
@@ -49,6 +49,8 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 	theta = atan(abs(turtlebot_inputs.linearAccelY/turtlebot_inputs.linearAccelX));
 
 	dist_to_goal = sqrt(pow((goal_x - turtlebot_inputs.x),2) + pow((goal_y - turtlebot_inputs.y),2));
+	if(isnan(dist_to_goal))
+		dist_to_goal = 5.0;
 
 	if(start && !(isnan(turtlebot_inputs.x)) && !(isnan(turtlebot_inputs.y))){
 		//ROS_INFO("startX = %f startY = %f");
@@ -70,8 +72,6 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 		}
 	}
 
-	//ROS_INFO("State = %d", State);
-
 	
 	//calculate heading error
 	current_yaw = 2.0 * atan2(turtlebot_inputs.z_angle, turtlebot_inputs.orientation_omega);
@@ -81,35 +81,27 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 	heading_err = des_yaw - current_yaw;
 	//ROS_INFO("heading_err = %f", heading_err);
 
+	//ROS_INFO("x = %f \t y = %f", turtlebot_inputs.x, turtlebot_inputs.y);
+	//ROS_INFO("yaw = %f \t omega = %f", turtlebot_inputs.z_angle, turtlebot_inputs.orientation_omega);
+
 	if((goal_x == start_x) && (goal_y == start_y) && State == 9){
-		State = 10;
+		State = 50;
 		*vel = 0.0;
 		*ang_vel = 0.0;
+		*soundValue = 1;
+		ROS_INFO("returned to origin");
 	}
 
 	switch(State){
 		case 1: //move forward until one of the sensors is tripped
-			/*if((min_dist < 4.0) && (min_dist > 0.5)){ //no object in visible distance, move straight
-				*vel = (float)(3.0/70.0)*(min_dist) + (11.0/140.0);
-				if(angle < 0)
-					*ang_vel = 0.1;
-				else
-					*ang_vel = -0.1;
-			}
-			else*/ 
-			if(isnan(current_yaw) || isnan(des_yaw) || isnan(heading_err)){
-				*vel = 0.0;
-				*ang_vel = 0.0;
-			}
-			else{
-				if((min_dist < 1.5) && (min_dist > 0.8) && (min_dist < dist_to_goal)){ //no object in visible distance, move straight
-					*vel = (float)(3.0/70.0)*(min_dist) + (11.0/140.0); //algorithm to solve for linear velocity, slows down as it gets closer to object
+				if((min_dist < 1.0) && (min_dist > 0.6) && (min_dist < dist_to_goal)){ //object seen but not too close, avoid by turning away
+					*vel = 0.1;
 					if(angle < 0)	//turn away from object
-						*ang_vel = 0.2;
+						*ang_vel = 0.25;
 					else
-						*ang_vel = -0.2;
+						*ang_vel = -0.25;
 				}
-				else if((min_dist <= 0.8) && (min_dist < dist_to_goal)){ //object too close to robot, enter handling procedure
+				else if((min_dist <= 0.6) && (min_dist < dist_to_goal)){ //object too close to robot, enter handling procedure
 					*vel = 0.0;
 					*ang_vel = 0.0;
 					State = 6;
@@ -120,22 +112,33 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 					break;
 				}
 				else{ //no object close to robot, move normally
-					if((fabs(turtlebot_inputs.x - goal_x) <= 0.1) && (fabs(turtlebot_inputs.y - goal_y) <= 0.1)){
-						*vel = 0.0;
-						*ang_vel = 0.0;
-						State = 9;
-						nano = turtlebot_inputs.nanoSecs;
+					//if any position reading is nan, wander around
+					if(isnan(current_yaw) || isnan(des_yaw) || isnan(heading_err)){
+						*vel = 0.05;
+						*ang_vel = PI_8*sin(float(turtlebot_inputs.nanoSecs / SEC));
+						//ROS_INFO("wandering...");
 					}
-					else
-						*vel = 0.25;
+					else{
+						//ROS_INFO("navigating");
+						if((fabs(turtlebot_inputs.x - goal_x) <= 0.25) && (fabs(turtlebot_inputs.y - goal_y) <= 0.25)){
+							*vel = 0.0;
+							*ang_vel = 0.0;
+							State = 9;
+							nano = turtlebot_inputs.nanoSecs;
+							*soundValue = 0;
+							ROS_INFO("goal reached");
+						}
+						else
+							*vel = 0.1;
 
-					float des_vel = k_phi*heading_err;
-					if(des_vel > 0.5)
-						*ang_vel = 0.5;
-					else if(des_vel < -0.5)
-						*ang_vel = -0.5;
-					else
-						*ang_vel = des_vel;
+						float des_vel = k_phi*heading_err;
+						if(des_vel > max_ang_vel)
+							*ang_vel = max_ang_vel;
+						else if(des_vel < -max_ang_vel)
+							*ang_vel = -max_ang_vel;
+						else
+							*ang_vel = des_vel;
+					}
 				}
 				
 			
@@ -169,7 +172,6 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 					//vector for linear accel passed 20 degrees, stop motors
 					State = 5;
 				}
-			}
 			break;
 
 		case 2: //bumper was pressed or cliff sensor tripped, move back 0.5 meters
@@ -210,15 +212,15 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 		case 6: //object 0.5 meters or less away
 			*vel = 0.0;
 			*ang_vel = 0.0;
-			if(min_dist > 0.5){ //if object is removed, go back to state 1 and drive straight
+			if(min_dist > 0.8){ //if object is removed, go back to state 1 and drive straight
 				State = 1;
 			}
 			else if(turtlebot_inputs.nanoSecs-nano >= 15000000000){ //object not removed, turn in place until way is clear
 				if(angle < 0){ //object detected in right of robot, turn left
-					rot_vel = 0.3927;
+					rot_vel = PI_8;
 				}
 				else{ //object detected on left of or in front of robot, turn right
-					rot_vel = -0.3927;
+					rot_vel = -PI_8;
 				}
 				nano = turtlebot_inputs.nanoSecs;
 				State = 7;
@@ -229,7 +231,7 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 			*vel = 0.0;
 			*ang_vel = rot_vel;
 			
-			if(turtlebot_inputs.nanoSecs-nano >= 2*SEC)
+			if(turtlebot_inputs.nanoSecs-nano >= 8*SEC)
 			//if(min_dist > 0.5) //when path is clear again, continue to State 1 and drive straight
 				State = 1;
 
@@ -248,10 +250,20 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 			*vel = 0.0;
 			*ang_vel = PI_8;
 			if(turtlebot_inputs.nanoSecs-nano >= 16*SEC){
-				State = 1;
 				goal_x = start_x;
-				goal_y = start_y;;
+				goal_y = start_y;
+				State = 10;
 			}
+			break;
+
+		case 10: //face towards origin
+			*vel = 0.0;
+			*ang_vel = PI_8;
+			if(fabs(heading_err) <= 0.4){
+				State = 1;
+				ROS_INFO("goal_x = %f \t goal_y = %f", goal_x, goal_y);
+			}
+			break;
 	}
 	
 }
