@@ -17,7 +17,7 @@ float current_yaw = 0.0;
 float des_yaw = 0.0;
 float heading_err = 0.0;
 
-float k_phi = 10.0;
+float k_phi = 0.05;
 
 float dist_to_goal = 0.0;
 
@@ -46,12 +46,12 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 		start_x = turtlebot_inputs.x;
 		start_y = turtlebot_inputs.y;
 		start = false;
-		//GET_GOAL(goal_x,goal_y);
-		cout<<"requesting new goal pose"<<endl;
-		cout<<"goal_x = "<<endl;
-		cin>>goal_x;
-		cout<<"goal_y = "<<endl;
-		cin>>goal_y;
+		GET_GOAL(goal_x,goal_y);
+		//cout<<"requesting new goal pose"<<endl;
+		//cout<<"goal_x = "<<endl;
+		//cin>>goal_x;
+		//cout<<"goal_y = "<<endl;
+		//cin>>goal_y;
 		ROS_INFO("Goal Pose Updated to X = %2.2f, Y = %2.2f", goal_x, goal_y);
 	}			
 	
@@ -70,19 +70,22 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 
 	
 	//calculate heading error
-	current_yaw = 2.0 * atan2(turtlebot_inputs.qz, turtlebot_inputs.qw);
+	ROS_INFO("qz = %f, qw = %f", turtlebot_inputs.qz, turtlebot_inputs.qw);
+	current_yaw = 2.0*atan2(turtlebot_inputs.qz, turtlebot_inputs.qw);
 	des_yaw = atan2((goal_y - turtlebot_inputs.y),(goal_x - turtlebot_inputs.x));
 	heading_err = des_yaw - current_yaw;
+	ROS_INFO("current yaw = %f, des yaw = %f", current_yaw, des_yaw);
+	ROS_INFO("heading err = %f", heading_err);
 
 	//If previous goal was completed (state = 50) or goal is nan, get new goal
 	if((State == 50) || isnan(goal_x) || isnan(goal_y)){
-		cout<<"requesting new goal pose"<<endl;
-		cout<<"goal_x = "<<endl;
-		cin>>goal_x;
-		cout<<"goal_y = "<<endl;
-		cin>>goal_y;
+		//cout<<"requesting new goal pose"<<endl;
+		//cout<<"goal_x = "<<endl;
+		//cin>>goal_x;
+		//cout<<"goal_y = "<<endl;
+		//cin>>goal_y;
 
-		//GET_GOAL(goal_x, goal_y);
+		GET_GOAL(goal_x, goal_y);
 		ROS_INFO("Goal Pose Updated to X = %2.2f, Y = %2.2f", goal_x, goal_y);
 	}
 
@@ -121,7 +124,7 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 				}
 				else{ //no object close to robot, move normally
 					//if any position reading is nan, wander around
-					if(isnan(current_yaw) || isnan(des_yaw) || isnan(heading_err)){
+					if(isnan(current_yaw) || isnan(des_yaw) || isnan(heading_err) || isnan(goal_x) || isnan(goal_y)){
 						*vel = 0.05;
 						*ang_vel = PI_8*sin(float(turtlebot_inputs.nanoSecs / SEC));
 						//ROS_INFO("wandering...");
@@ -149,16 +152,16 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 					}
 				}
 				
-			
-				/*if(turtlebot_inputs.battVoltage < 10){
+				//if the battery of the robot drops beneath a certain threshold, halt the robot
+				if(turtlebot_inputs.battVoltage < 10){
 					State = 8;
 					*vel = 0.0;
 					*ang_vel = 0.0;
 				}
 
-				else*/ if (turtlebot_inputs.leftBumperPressed == 1 || turtlebot_inputs.centerBumperPressed == 1 || turtlebot_inputs.sensor0State == 1 || turtlebot_inputs.sensor1State == 1){
+				else if (turtlebot_inputs.leftBumperPressed == 1 || turtlebot_inputs.centerBumperPressed == 1 || turtlebot_inputs.sensor0State == 1 || turtlebot_inputs.sensor1State == 1){
 					//bumper pressed, obstacle to left of or in front of robot
-					//proceed to state 2, set future rotational velocity to turn right pi/8 rad/sec
+					//proceed to state 2, set future rotational velocity to turn CW pi/8 rad/sec
 					State = 2;
 					rot_vel = -PI_8;
 					nano = turtlebot_inputs.nanoSecs;
@@ -166,7 +169,7 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 				}
 				else if(turtlebot_inputs.rightBumperPressed == 1 || turtlebot_inputs.sensor2State == 1){
 					//bumper pressed, obstacle to right of robot
-					//proceed to state 2, set future rotational velocity to turn left pi/8 rad/sec
+					//proceed to state 2, set future rotational velocity to turn CCW pi/8 rad/sec
 					State = 2;
 					rot_vel = PI_8;
 					nano = turtlebot_inputs.nanoSecs;
@@ -254,7 +257,7 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 			}
 			break;
 	
-		case 9: //goal location reached, spin in place 4 times
+		case 9: //goal location reached, spin in place
 			*vel = 0.0;
 			*ang_vel = PI_8;
 			if(turtlebot_inputs.nanoSecs-nano >= 16*SEC){
@@ -264,7 +267,7 @@ void turtlebot_controller(turtlebotInputs turtlebot_inputs, uint8_t *soundValue,
 			}
 			break;
 
-		case 10: //face towards origin
+		case 10: //rotate until facing towards origin
 			*vel = 0.0;
 			*ang_vel = PI_8;
 			if(fabs(heading_err) <= 0.4){
